@@ -5,8 +5,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import date
 import json
-import streamlit as st
-st.write(type(st.secrets["FIREBASE_KEY"]))
+# ---import streamlit as st
+# --- st.write(type(st.secrets["FIREBASE_KEY"]))
 
 # --- Firebase Setup ---
 if not firebase_admin._apps:
