@@ -8,7 +8,8 @@ import json
 
 # --- Firebase Setup ---
 if not firebase_admin._apps:
-    cred = credentials.Certificate(st.secrets["FIREBASE_KEY"])
+    cred_json = st.secrets["FIREBASE_KEY"]
+    cred = credentials.Certificate(json.loads(cred_json))
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
