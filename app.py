@@ -103,19 +103,6 @@ for u in users:
 
 df_dash = pd.DataFrame(dash_data)
 
-# Apply coloring
-def color_status(val):
-    if val == "Over Limit":
-        return "background-color: red; color: white"
-    elif val == "OK":
-        return "background-color: lightgreen"
-    else:
-        return ""
-
-if not df_dash.empty and "Status" in df_dash.columns:
-    st.dataframe(df_dash.style.applymap(color_status, subset=["Status"]))
-else:
-    st.info("No user data to display in dashboard")
 
 # --- Chart: Remaining calories ---
 st.subheader("📉 Remaining Calories (Top 5 Users)")
