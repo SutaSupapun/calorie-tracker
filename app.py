@@ -193,7 +193,7 @@ def analyze_food_image(image_bytes: bytes, media_type: str) -> dict:
             ]
         }]
     }
-    headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+    headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": st.secrets["ANTHROPIC_API_KEY"]}
     resp = requests.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, timeout=30)
     resp.raise_for_status()
     raw = resp.json()["content"][0]["text"].strip()
