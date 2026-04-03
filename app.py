@@ -103,8 +103,8 @@ if "deleted_user" not in st.session_state:
 # =======================
 # Page Config
 # =======================
-st.set_page_config(page_title="🥗 Calorie Tracker V.1.0.260403", layout="wide")
-st.title("🥗 Calorie Tracker V.1.0.260403")
+st.set_page_config(page_title="🥗 Calorie Tracker", layout="wide")
+st.title("🥗 Calorie Tracker")
 st.caption(f"วันที่: {now.strftime('%d %B %Y  %H:%M')} (Bangkok Time)")
 
 # =======================
@@ -164,6 +164,44 @@ if st.session_state["users"]:
                 st.warning("⚠️ Please check the confirm box first.")
 
 # =======================
+# AI: วิเคราะห์รูปอาหาร
+# =======================
+def analyze_food_image(image_bytes: bytes, media_type: str) -> dict:
+    """ส่งรูปให้ Claude วิเคราะห์แคลลอรี่ — คืน {"calories": int, "food_name": str, "detail": str}"""
+    import base64, requests
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    payload = {
+        "model": "claude-opus-4-5",
+        "max_tokens": 1000,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": b64}
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        "วิเคราะห์อาหารในรูปนี้ แล้วประมาณแคลลอรี่ "
+                        "ตอบเป็น JSON เท่านั้น ไม่ต้องมีข้อความอื่น รูปแบบ: "
+                        '{"calories": <จำนวนแคลลอรี่เป็น int>, '
+                        '"food_name": "<ชื่ออาหารภาษาไทย>", '
+                        '"detail": "<รายละเอียดสั้นๆ เช่น ส่วนผสมหลัก ปริมาณโดยประมาณ>"}'
+                    )
+                }
+            ]
+        }]
+    }
+    headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+    resp = requests.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers, timeout=30)
+    resp.raise_for_status()
+    raw = resp.json()["content"][0]["text"].strip()
+    # ลบ ```json fence ถ้ามี
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    return json.loads(raw)
+
+# =======================
 # Main: Log Calories
 # =======================
 st.header("📝 Log Calories")
@@ -171,7 +209,7 @@ st.header("📝 Log Calories")
 if not st.session_state["users"]:
     st.info("ยังไม่มีผู้ใช้ กรุณาเพิ่มผู้ใช้ในแถบด้านซ้ายก่อน")
 else:
-    col1, col2, col3 = st.columns([2, 2, 2])
+    col1, col2 = st.columns([2, 2])
 
     with col1:
         lfc = st.session_state["form_counter"]
@@ -184,12 +222,71 @@ else:
     with col2:
         log_date = st.date_input("Date", value=now.date(), key="log_date")
 
-    with col3:
-        fc = st.session_state["form_counter"]
-    log_cal = st.number_input("Calories eaten", min_value=0, value=0, step=50, key=f"log_cal_{fc}")
-    log_note = st.text_input("Note (optional, e.g. 'Lunch - ข้าวผัด')", key=f"log_note_{fc}")
+    fc = st.session_state["form_counter"]
 
-    if st.button("✅ Add Log", type="primary"):
+    # --- Photo Upload Section ---
+    st.subheader("📷 ถ่ายหรืออัปโหลดรูปอาหาร")
+    uploaded = st.file_uploader(
+        "เลือกรูปอาหาร (รองรับ jpg, png, webp)",
+        type=["jpg", "jpeg", "png", "webp"],
+        key=f"food_img_{fc}",
+        help="บน mobile สามารถถ่ายรูปจากกล้องได้โดยตรง"
+    )
+
+    # ค่า cal เริ่มต้น — ถ้า AI วิเคราะห์แล้วจะ set ค่าลงใน session_state
+    ai_cal_key   = f"ai_cal_{fc}"
+    ai_name_key  = f"ai_name_{fc}"
+    ai_detail_key = f"ai_detail_{fc}"
+
+    if uploaded is not None:
+        img_col, result_col = st.columns([1, 1])
+        with img_col:
+            st.image(uploaded, caption="รูปที่เลือก", use_container_width=True)
+
+        with result_col:
+            if st.button("🤖 วิเคราะห์แคลลอรี่", type="primary", key=f"analyze_btn_{fc}"):
+                with st.spinner("AI กำลังวิเคราะห์อาหาร..."):
+                    try:
+                        img_bytes = uploaded.read()
+                        media_type = uploaded.type  # e.g. "image/jpeg"
+                        result = analyze_food_image(img_bytes, media_type)
+                        st.session_state[ai_cal_key]    = result.get("calories", 0)
+                        st.session_state[ai_name_key]   = result.get("food_name", "")
+                        st.session_state[ai_detail_key] = result.get("detail", "")
+                        st.success(f"✅ วิเคราะห์เสร็จแล้ว!")
+                    except Exception as e:
+                        st.error(f"❌ วิเคราะห์ไม่สำเร็จ: {e}")
+
+            # แสดงผลลัพธ์จาก AI
+            if ai_name_key in st.session_state:
+                st.info(
+                    f"🍽️ **{st.session_state[ai_name_key]}**\n\n"
+                    f"📋 {st.session_state[ai_detail_key]}\n\n"
+                    f"🔥 ประมาณ **{st.session_state[ai_cal_key]} แคลลอรี่**"
+                )
+
+    st.divider()
+
+    # --- Manual Input (แก้ไขได้) ---
+    default_cal = st.session_state.get(ai_cal_key, 0)
+    default_note = st.session_state.get(ai_name_key, "")
+
+    log_cal = st.number_input(
+        "🔥 Calories eaten (แก้ไขได้)",
+        min_value=0,
+        value=default_cal,
+        step=10,
+        key=f"log_cal_{fc}",
+        help="AI ประมาณค่ามาให้แล้ว สามารถแก้ไขได้ตามต้องการ"
+    )
+    log_note = st.text_input(
+        "Note (optional)",
+        value=default_note,
+        key=f"log_note_{fc}",
+        help="ชื่ออาหารหรือหมายเหตุ"
+    )
+
+    if st.button("✅ Add Log", type="primary", key=f"add_log_{fc}"):
         if log_cal == 0:
             st.warning("⚠️ Calories is 0 — are you sure?")
         date_str = log_date.strftime("%Y-%m-%d")
