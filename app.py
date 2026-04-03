@@ -16,12 +16,14 @@ def color_status(val):
     else:
         return ""
 
-def excel_download(df, filename="export.xlsx"):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:  # เปลี่ยนจาก xlsxwriter
-        df.to_excel(writer, index=False, sheet_name="Data")
-    processed_data = output.getvalue()
-    st.download_button(label="Download Excel", data=processed_data, file_name=filename, mime="application/vnd.ms-excel")
+def excel_download(df, filename="export.csv"):
+    csv_data = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download CSV",
+        data=csv_data,
+        file_name=filename,
+        mime="text/csv"
+    )
 
 def get_remaining(u):
     total_eat = sum(u.get('logs', {}).values())
