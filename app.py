@@ -103,7 +103,7 @@ if "deleted_user" not in st.session_state:
 # =======================
 # Page Config
 # =======================
-st.set_page_config(page_title="🥗 Calorie Tracker", layout="wide")
+st.set_page_config(page_title="🥗 Calorie Tracker V.1.0", layout="wide")
 st.title("🥗 Calorie Tracker")
 st.caption(f"วันที่: {now.strftime('%d %B %Y  %H:%M')} (Bangkok Time)")
 
