@@ -26,19 +26,14 @@ def get_gsheet():
     return sheet
 
 def load_data() -> dict:
+    """โหลดข้อมูลทั้งหมดจาก Google Sheets (เก็บใน cell A1 เป็น JSON string)"""
     try:
-        sheet_id = st.secrets.get("sheet_id", "NOT FOUND")
-        has_gcp = "gcp_service_account" in st.secrets
-        client_email = st.secrets.get("gcp_service_account", {}).get("client_email", "NOT FOUND") if has_gcp else "NO GCP KEY"
-        st.info(f"Debug — sheet_id: {sheet_id} | gcp: {has_gcp} | email: {client_email}")
         sheet = get_gsheet()
         raw = sheet.acell("A1").value
         if raw:
             return json.loads(raw)
     except Exception as e:
-        import traceback
-        st.error(f"โหลดไม่สำเร็จ: {e}")
-        st.code(traceback.format_exc())
+        st.error(f"❌ โหลดข้อมูลไม่สำเร็จ: {e}")
     return {}
 
 def save_data(users: dict):
