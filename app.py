@@ -1,116 +1,125 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import datetime
+import plotly.express as px
+from io import BytesIO
+from datetime import datetime
 import pytz
-import matplotlib.pyplot as plt
-from firebase_admin import credentials, initialize_app, firestore
 
-# --- Firebase initialization ---
-cred_dict = dict(st.secrets["FIREBASE_KEY"])
-cred = credentials.Certificate(cred_dict)
-try:
-    initialize_app(cred)
-except ValueError:
-    # Already initialized
-    pass
-db = firestore.client()
-
-# --- Set timezone ---
-tz = pytz.timezone("Asia/Bangkok")
-
-st.title("🍎 Calorie Tracker Dashboard")
-
-# --- Sidebar: User management ---
-st.sidebar.header("User Management")
-users_ref = db.collection("users")
-users_docs = users_ref.stream()
-users = [u.to_dict() for u in users_docs]
-
-user_names = [u.get("name") for u in users]
-new_name = st.sidebar.text_input("Add new user (unique)")
-new_max = st.sidebar.number_input("Max Calories", min_value=0, value=2000)
-if st.sidebar.button("Add User"):
-    if new_name.strip() == "":
-        st.sidebar.error("Name cannot be empty")
-    elif new_name in user_names:
-        st.sidebar.error("Name already exists")
+# =======================
+# Helper Functions
+# =======================
+def color_status(val):
+    if val == "Over Limit":
+        return "background-color: red; color: white"
+    elif val == "OK":
+        return "background-color: lightgreen"
     else:
-        users_ref.add({"name": new_name, "max_cal": new_max})
-        st.experimental_rerun()
+        return ""
 
-# Select user to delete or edit
-selected = st.sidebar.selectbox("Select User", [""] + user_names)
-if selected:
-    user_doc = None
-    for u in users_ref.stream():
-        if u.to_dict()["name"] == selected:
-            user_doc = u
-            break
-    if user_doc:
-        edit_max = st.sidebar.number_input("Edit Max Calories", min_value=0, value=user_doc.to_dict().get("max_cal",2000))
-        if st.sidebar.button("Update Max Calories"):
-            user_doc.reference.update({"max_cal": edit_max})
-            st.sidebar.success("Max Calories updated")
-            st.experimental_rerun()
+def excel_download(df, filename="export.xlsx"):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name="Data")
+    processed_data = output.getvalue()
+    st.download_button(label="Download Excel", data=processed_data, file_name=filename, mime="application/vnd.ms-excel")
 
-        if st.sidebar.button("Delete User"):
-            if st.sidebar.confirm(f"Confirm delete user {selected}?"):
-                # Delete all logs of this user
-                logs_ref = db.collection("logs").where("user", "==", selected)
-                for log in logs_ref.stream():
-                    log.reference.delete()
-                # Delete user
-                user_doc.reference.delete()
-                st.sidebar.success(f"User {selected} deleted")
-                st.experimental_rerun()
-
-# --- Sidebar: Filter logs ---
-st.sidebar.header("Filter Logs")
-start_date = st.sidebar.date_input("Start date", datetime.date.today() - datetime.timedelta(days=7))
-end_date = st.sidebar.date_input("End date", datetime.date.today())
-
-# --- Logs table ---
-logs_ref = db.collection("logs").where("date", ">=", datetime.datetime.combine(start_date, datetime.time.min, tzinfo=tz))\
-                                 .where("date", "<=", datetime.datetime.combine(end_date, datetime.time.max, tzinfo=tz))
-logs = [l.to_dict() for l in logs_ref.stream()]
-df_logs = pd.DataFrame(logs)
-if not df_logs.empty:
-    st.subheader("📋 Logs")
-    st.dataframe(df_logs)
-    if st.button("Export Logs to Excel"):
-        df_logs.to_excel("logs.xlsx", index=False)
-        st.success("Logs exported to logs.xlsx")
-else:
-    st.info("No logs found for selected date range")
-
-# --- Dashboard ---
-st.subheader("📊 Dashboard")
-dash_data = []
-for u in users:
-    user_name = u.get("name")
-    max_cal = u.get("max_cal",0)
-    # Sum eat
-    total_eat = sum(l.get("calories",0) for l in logs if l.get("user")==user_name)
-    remain = max_cal - total_eat
+def get_remaining(u):
+    total_eat = sum(u.get('logs', {}).values())
+    remain = u.get('max_cal', 0) - total_eat
     status = "OK" if remain >= 0 else "Over Limit"
-    dash_data.append({
-        "Name": user_name,
-        "Max Cal": max_cal,
-        "Eat": total_eat,
-        "Remain": remain,
+    return total_eat, remain, status
+
+# =======================
+# Reset Timezone (ไทย)
+# =======================
+THAI_TZ = pytz.timezone('Asia/Bangkok')
+st.session_state['now'] = datetime.now(THAI_TZ)
+
+# =======================
+# Initialize Data
+# =======================
+if "users" not in st.session_state:
+    st.session_state["users"] = {}  # {username: {"max_cal": int, "logs": {date: cal}}}
+
+# =======================
+# Sidebar: Add / Edit / Delete User
+# =======================
+st.sidebar.header("User Management")
+
+# Add user
+new_user = st.sidebar.text_input("New user name")
+new_max = st.sidebar.number_input("Max Calories", min_value=0, value=2000, step=50)
+if st.sidebar.button("Add User"):
+    if not new_user:
+        st.sidebar.error("User name cannot be empty!")
+    elif new_user in st.session_state["users"]:
+        st.sidebar.error("User name already exists!")
+    else:
+        st.session_state["users"][new_user] = {"max_cal": new_max, "logs": {}}
+        st.sidebar.success(f"Added user {new_user}")
+
+# Select user for edit/delete
+if st.session_state["users"]:
+    selected = st.sidebar.selectbox("Select user", list(st.session_state["users"].keys()))
+    
+    # Edit Max Calories
+    edit_max = st.sidebar.number_input("Edit Max Calories", min_value=0, value=st.session_state["users"][selected]["max_cal"], step=50)
+    if st.sidebar.button("Update Max Calories"):
+        st.session_state["users"][selected]["max_cal"] = edit_max
+        st.sidebar.success(f"Updated {selected}'s Max Calories")
+    
+    # Delete user with confirm
+    if st.sidebar.button("Delete User"):
+        confirm_delete = st.sidebar.checkbox(f"Confirm delete user {selected}?")
+        if confirm_delete:
+            del st.session_state["users"][selected]
+            st.sidebar.success(f"Deleted user {selected}")
+
+# =======================
+# Main: Log Calories
+# =======================
+st.header("Calorie Tracker Logs")
+if st.session_state["users"]:
+    user_list = list(st.session_state["users"].keys())
+    log_user = st.selectbox("Select user to log", user_list)
+    log_date = st.date_input("Date", datetime.now(THAI_TZ))
+    log_cal = st.number_input("Calories eaten", min_value=0, value=0, step=50)
+    if st.button("Add Log"):
+        date_str = log_date.strftime("%Y-%m-%d")
+        st.session_state["users"][log_user]["logs"][date_str] = log_cal
+        st.success(f"Logged {log_cal} calories for {log_user} on {date_str}")
+else:
+    st.info("No users. Add users in sidebar.")
+
+# =======================
+# Dashboard
+# =======================
+st.header("Dashboard")
+dashboard_data = []
+for name, u in st.session_state["users"].items():
+    total, remain, status = get_remaining(u)
+    dashboard_data.append({
+        "Name": name,
+        "Max Cal": u.get("max_cal", 0),
+        "Eat": total,
+        "Remaining": remain,
         "Status": status
     })
 
-df_dash = pd.DataFrame(dash_data)
-
-
-# --- Chart: Remaining calories ---
-st.subheader("📉 Remaining Calories (Top 5 Users)")
+df_dash = pd.DataFrame(dashboard_data)
 if not df_dash.empty:
-    top5 = df_dash.head(5)
-    colors = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd"]
-    plt.figure(figsize=(8,4))
-    plt.bar(top5["Name"], top5["Remain"], color=colors[:len(top5)])
-    plt.axhline(0, color="black", linewidth=0.8)
-    plt.ylabel("Remaining Calories")
-    st.pyplot(plt)
+    # Table with Status coloring
+    st.dataframe(df_dash.style.applymap(color_status, subset=["Status"]))
+
+    # Plot remaining calories
+    fig = px.bar(df_dash.head(5), x="Name", y="Remaining", color="Name",
+                 color_discrete_sequence=px.colors.qualitative.Pastel,
+                 text="Remaining")
+    fig.update_layout(title="Remaining Calories (Top 5 Users)")
+    st.plotly_chart(fig)
+
+    # Export Excel
+    excel_download(df_dash, filename="calorie_dashboard.xlsx")
+else:
+    st.info("No user data to display")
