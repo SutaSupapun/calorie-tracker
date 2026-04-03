@@ -186,7 +186,7 @@ else:
 
     with col3:
         fc = st.session_state["form_counter"]
-    log_cal = st.number_input("Calories eaten", min_value=0, value=0, step=50, key=f"log_cal_{fc}")
+    log_cal = st.number_input("🔥 Calories eaten", min_value=0, value=0, step=50, key=f"log_cal_{fc}")
     log_note = st.text_input("Note (optional, e.g. 'Lunch - ข้าวผัด')", key=f"log_note_{fc}")
 
     if st.button("✅ Add Log", type="primary"):
