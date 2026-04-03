@@ -1,16 +1,21 @@
 # app.py
 import streamlit as st
 from firebase_admin import credentials, initialize_app, firestore
-import json
-import pandas as pd
 from datetime import datetime
 import pytz
+import pandas as pd
+import plotly.express as px
+
+# ---------------------------
+# Timezone
+# ---------------------------
+TH_TZ = pytz.timezone("Asia/Bangkok")
 
 # ---------------------------
 # Firebase Initialization
 # ---------------------------
 try:
-    cred_dict = json.loads(st.secrets["FIREBASE_KEY"])
+    cred_dict = dict(st.secrets["FIREBASE_KEY"])  # Convert AttrDict -> dict
 except Exception as e:
     st.error(f"Firebase credential error: {e}")
     st.stop()
@@ -20,182 +25,160 @@ initialize_app(cred)
 db = firestore.client()
 
 # ---------------------------
-# Timezone
-# ---------------------------
-tz = pytz.timezone("Asia/Bangkok")
-def now():
-    return datetime.now(tz)
-
-# ---------------------------
-# Helpers
+# Helper Functions
 # ---------------------------
 def get_users():
     return [doc.to_dict() for doc in db.collection("users").stream()]
 
-def get_logs(user_id=None, start_date=None, end_date=None):
-    logs_ref = db.collection("logs")
-    if user_id:
-        logs_ref = logs_ref.where("user_id", "==", user_id)
-    if start_date:
-        logs_ref = logs_ref.where("date", ">=", start_date)
-    if end_date:
-        logs_ref = logs_ref.where("date", "<=", end_date)
-    return [doc.to_dict() for doc in logs_ref.stream()]
-
 def add_user(name, max_cal):
-    existing = db.collection("users").where("name", "==", name).get()
-    if existing:
+    users_ref = db.collection("users")
+    # Check duplicate
+    if any(u['name'] == name for u in get_users()):
         st.error("User name already exists!")
         return False
-    db.collection("users").add({"name": name, "max_cal": max_cal})
-    st.success(f"User {name} added")
+    users_ref.add({"name": name, "max_cal": max_cal, "created_at": datetime.now(TH_TZ)})
     return True
 
-def update_max_cal(user_doc_id, new_max):
-    db.collection("users").document(user_doc_id).update({"max_cal": new_max})
-    st.success("Max calories updated!")
+def delete_user(user_id):
+    # Delete user + all logs
+    db.collection("logs").where("user_id", "==", user_id).stream()
+    logs_ref = db.collection("logs")
+    for log in logs_ref.where("user_id", "==", user_id).stream():
+        logs_ref.document(log.id).delete()
+    db.collection("users").document(user_id).delete()
 
-def delete_user(user_doc_id):
-    # delete user logs first
-    logs = db.collection("logs").where("user_id", "==", user_doc_id).stream()
-    for log in logs:
-        db.collection("logs").document(log.id).delete()
-    db.collection("users").document(user_doc_id).delete()
-    st.success("User and all logs deleted!")
+def update_max_cal(user_id, new_max):
+    db.collection("users").document(user_id).update({"max_cal": new_max})
 
-# ---------------------------
-# Sidebar - Add User
-# ---------------------------
-st.sidebar.header("Add User")
-with st.sidebar.form("add_user"):
-    name = st.text_input("Name")
-    max_cal = st.number_input("Max Calories", min_value=0, value=2000)
-    submitted = st.form_submit_button("Add User")
-    if submitted:
-        add_user(name, max_cal)
+def add_log(user_id, calories, note=""):
+    db.collection("logs").add({
+        "user_id": user_id,
+        "calories": calories,
+        "note": note,
+        "created_at": datetime.now(TH_TZ)
+    })
 
-# ---------------------------
-# Sidebar - Select User to Edit / Delete
-# ---------------------------
-st.sidebar.header("Manage Users")
-users = get_users()
-user_map = {u['name']: u for u in users}
-selected_user_name = st.sidebar.selectbox("Select User", [""] + [u['name'] for u in users])
-
-if selected_user_name:
-    user_data = user_map[selected_user_name]
-    st.sidebar.subheader("Edit Max Calories")
-    new_max = st.sidebar.number_input(
-        "Max Calories",
-        min_value=0,
-        value=user_data["max_cal"]
-    )
-    if st.sidebar.button("Update Max"):
-        # Find doc ID
-        doc_id = db.collection("users").where("name", "==", selected_user_name).get()[0].id
-        update_max_cal(doc_id, new_max)
-
-    st.sidebar.subheader("Delete User")
-    if st.sidebar.button("Delete User"):
-        if st.confirm(f"Are you sure you want to delete {selected_user_name}? This will remove all their logs!"):
-            doc_id = db.collection("users").where("name", "==", selected_user_name).get()[0].id
-            delete_user(doc_id)
+def get_logs(user_id=None, start_date=None, end_date=None):
+    logs_ref = db.collection("logs")
+    query = logs_ref
+    if user_id:
+        query = query.where("user_id", "==", user_id)
+    logs = [doc.to_dict() for doc in query.stream()]
+    df = pd.DataFrame(logs)
+    if df.empty:
+        return df
+    df['created_at'] = pd.to_datetime(df['created_at']).dt.tz_convert(TH_TZ)
+    if start_date:
+        df = df[df['created_at'] >= pd.to_datetime(start_date)]
+    if end_date:
+        df = df[df['created_at'] <= pd.to_datetime(end_date)]
+    return df
 
 # ---------------------------
-# Log Food Intake
+# Streamlit UI
 # ---------------------------
-st.header("Add Food Log")
-with st.form("log_food"):
-    user_log_name = st.selectbox("User", [u['name'] for u in users])
-    calories = st.number_input("Calories", min_value=0, value=0)
-    date = st.date_input("Date", value=now())
-    submitted = st.form_submit_button("Add Log")
-    if submitted:
-        # Get user ID
-        user_doc_id = db.collection("users").where("name", "==", user_log_name).get()[0].id
-        db.collection("logs").add({
-            "user_id": user_doc_id,
-            "user_name": user_log_name,
-            "calories": calories,
-            "date": datetime.combine(date, datetime.min.time())
-        })
-        st.success("Log added!")
+st.set_page_config(page_title="Calorie Tracker", layout="wide")
+st.title("🍽️ Calorie Tracker Dashboard")
 
-# ---------------------------
-# Filter Logs
-# ---------------------------
-st.header("View Logs")
-filter_user = st.selectbox("Filter User", ["All"] + [u['name'] for u in users])
-start_date = st.date_input("Start Date", value=None)
-end_date = st.date_input("End Date", value=None)
-
-logs = get_logs(
-    None if filter_user == "All" else user_map[filter_user]["name"],
-    start_date=start_date,
-    end_date=end_date
-)
-if logs:
-    df_logs = pd.DataFrame(logs)
-    st.dataframe(df_logs)
-else:
-    st.info("No logs found for the filter")
+menu = ["Dashboard", "Manage Users", "Add Log", "Logs", "Export Excel"]
+choice = st.sidebar.selectbox("Menu", menu)
 
 # ---------------------------
 # Dashboard
 # ---------------------------
-st.header("Dashboard")
-data = []
-for u in users:
-    # Get user logs
-    doc_id = db.collection("users").where("name", "==", u['name']).get()[0].id
-    user_logs = get_logs(doc_id)
-    total_eat = sum([l['calories'] for l in user_logs])
-    remaining = u['max_cal'] - total_eat
-    data.append({
-        "Name": u['name'],
-        "Max Cal": u['max_cal'],
-        "Eat": total_eat,
-        "Remaining": remaining,
-        "Status": "Over Limit" if remaining < 0 else "OK"
-    })
-
-df = pd.DataFrame(data)
-st.dataframe(df.style.applymap(
-    lambda v: "background-color: red; color: white" if isinstance(v, str) and v=="Over Limit"
-    else ("background-color: green; color: white" if isinstance(v, str) and v=="OK" else ""),
-    subset=["Status"]
-))
+if choice == "Dashboard":
+    st.subheader("Dashboard Overview")
+    users = get_users()
+    data = []
+    for u in users:
+        logs = get_logs(u['id'] if 'id' in u else None)
+        total_eat = logs['calories'].sum() if not logs.empty else 0
+        remain = u['max_cal'] - total_eat
+        data.append({
+            "Name": u['name'],
+            "Max Cal": u['max_cal'],
+            "Eat": total_eat,
+            "Remaining": remain
+        })
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df['Status'] = df['Remaining'].apply(lambda x: "OK" if x >=0 else "Over Limit")
+        st.dataframe(df.style.apply(lambda x: ["background-color: #ff9999" if v=="Over Limit" else "background-color: #99ff99" for v in x], subset=['Status']))
+        # Graph
+        fig = px.bar(df.head(5), x='Name', y='Remaining', color='Name', text='Remaining',
+                     color_discrete_sequence=px.colors.qualitative.Pastel)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No users to display.")
 
 # ---------------------------
-# Remaining Calories Chart
+# Manage Users
 # ---------------------------
-st.subheader("Remaining Calories Chart")
-import plotly.express as px
+elif choice == "Manage Users":
+    st.subheader("Manage Users")
+    users = get_users()
+    for u in users:
+        col1, col2, col3, col4 = st.columns([2,2,2,1])
+        with col1:
+            st.write(u['name'])
+        with col2:
+            new_max = st.number_input(f"Max Cal {u['name']}", min_value=0, value=u['max_cal'], key=f"max_{u['name']}")
+        with col3:
+            if st.button("Update Max", key=f"upd_{u['name']}"):
+                update_max_cal(u['id'], new_max)
+                st.success(f"{u['name']}'s Max Cal updated.")
+        with col4:
+            if st.button("Delete", key=f"del_{u['name']}"):
+                if st.confirm(f"Confirm delete user {u['name']}?"):
+                    delete_user(u['id'])
+                    st.success(f"User {u['name']} deleted.")
+                    st.experimental_rerun()
 
-colors = px.colors.qualitative.Set1  # 5 distinct colors
-fig = px.bar(
-    df.head(5),
-    x="Name",
-    y="Remaining",
-    color="Name",
-    color_discrete_sequence=colors,
-    text="Remaining",
-    labels={"Remaining": "Remaining Calories"}
-)
-fig.update_traces(
-    marker_color=["red" if r < 0 else "green" for r in df.head(5)["Remaining"]],
-    textposition="outside"
-)
-st.plotly_chart(fig)
+# ---------------------------
+# Add Log
+# ---------------------------
+elif choice == "Add Log":
+    st.subheader("Add Calorie Log")
+    users = get_users()
+    user_dict = {u['name']: u['id'] for u in users}
+    selected_user = st.selectbox("User", user_dict.keys())
+    calories = st.number_input("Calories", min_value=0)
+    note = st.text_input("Note")
+    if st.button("Add Log"):
+        add_log(user_dict[selected_user], calories, note)
+        st.success("Log added!")
+
+# ---------------------------
+# Logs
+# ---------------------------
+elif choice == "Logs":
+    st.subheader("View Logs")
+    users = get_users()
+    user_dict = {u['name']: u['id'] for u in users}
+    selected_user = st.selectbox("User (optional)", ["All"] + list(user_dict.keys()))
+    start_date = st.date_input("Start Date")
+    end_date = st.date_input("End Date")
+    uid = None if selected_user=="All" else user_dict[selected_user]
+    df_logs = get_logs(uid, start_date, end_date)
+    st.dataframe(df_logs)
 
 # ---------------------------
 # Export Excel
 # ---------------------------
-st.subheader("Export Logs")
-if st.button("Export Excel"):
-    if logs:
-        excel_file = "logs_export.xlsx"
-        pd.DataFrame(logs).to_excel(excel_file, index=False)
-        st.success(f"Excel exported: {excel_file}")
+elif choice == "Export Excel":
+    st.subheader("Export Logs to Excel")
+    users = get_users()
+    all_logs = []
+    for u in users:
+        logs = get_logs(u['id'])
+        if not logs.empty:
+            logs['User'] = u['name']
+            all_logs.append(logs)
+    if all_logs:
+        df_export = pd.concat(all_logs)
+        excel_file = "logs.xlsx"
+        df_export.to_excel(excel_file, index=False)
+        with open(excel_file, "rb") as f:
+            st.download_button("Download Excel", f, file_name=excel_file)
     else:
-        st.info("No logs to export")
+        st.info("No logs to export.")
