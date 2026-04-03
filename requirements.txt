@@ -4,3 +4,5 @@ plotly
 firebase-admin
 pytz
 matplotlib
+gspread
+google-auth
