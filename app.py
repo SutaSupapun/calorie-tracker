@@ -18,7 +18,7 @@ def color_status(val):
 
 def excel_download(df, filename="export.xlsx"):
     output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:  # เปลี่ยนจาก xlsxwriter
         df.to_excel(writer, index=False, sheet_name="Data")
     processed_data = output.getvalue()
     st.download_button(label="Download Excel", data=processed_data, file_name=filename, mime="application/vnd.ms-excel")
