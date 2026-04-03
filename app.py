@@ -81,7 +81,7 @@ with col1:
             "max_calories": new_max_cal
         })
         st.success("Updated!")
-        st.experimental_rerun()
+        st.st.rerun()()
 
 # DELETE USER WITH CONFIRM
 if "confirm_delete" not in st.session_state:
@@ -106,7 +106,7 @@ with col2:
 
                 st.session_state.confirm_delete = False
                 st.warning("User deleted")
-                st.experimental_rerun()
+                st.st.rerun()()
 
         with col_no:
             if st.button("❌ Cancel"):
@@ -134,7 +134,7 @@ if st.button("Add Record"):
         "note": note
     })
     st.success("Saved")
-    st.experimental_rerun()
+    st.st.rerun()()
 
 # -----------------------------
 # LOAD LOGS
@@ -171,12 +171,12 @@ if not df_logs.empty:
                     "note": new_note
                 })
                 st.success("Updated")
-                st.experimental_rerun()
+                st.st.rerun()()
 
             if st.button("Delete", key=f"d{i}"):
                 db.collection("records").document(row["id"]).delete()
                 st.warning("Deleted")
-                st.experimental_rerun()
+                st.st.rerun()()
 else:
     st.info("No logs")
 
