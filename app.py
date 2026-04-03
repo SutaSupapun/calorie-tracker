@@ -58,6 +58,9 @@ today_str = now.strftime("%Y-%m-%d")
 if "users" not in st.session_state:
     st.session_state["users"] = {}
 
+if "form_counter" not in st.session_state:
+    st.session_state["form_counter"] = 0
+
 # =======================
 # Page Config
 # =======================
@@ -133,9 +136,10 @@ else:
         log_date = st.date_input("Date", value=now.date(), key="log_date")
 
     with col3:
-        log_cal = st.number_input("Calories eaten", min_value=0, value=0, step=50, key="log_cal")
+        fc = st.session_state["form_counter"]
+    log_cal = st.number_input("Calories eaten", min_value=0, value=0, step=50, key=f"log_cal_{fc}")
 
-    log_note = st.text_input("Note (optional, e.g. 'Lunch - ข้าวผัด')", key="log_note")
+    log_note = st.text_input("Note (optional, e.g. 'Lunch - ข้าวผัด')", key=f"log_note_{fc}")
 
     if st.button("✅ Add Log", type="primary"):
         if log_cal == 0:
@@ -160,6 +164,7 @@ else:
             f"✅ Logged **{log_cal} cal** for **{log_user}** on {date_str} "
             f"(รวมวันนี้: {user_logs[date_str]} cal)"
         )
+        st.session_state["form_counter"] += 1  # ✅ clear Calories & Note
         st.rerun()
 
     # --- แสดง Log History ของ user ที่เลือก ---
@@ -211,20 +216,25 @@ else:
 
     if not df_dash.empty:
         # ✅ FIX: ใช้ st.dataframe + Styler เพื่อแสดงสีได้
-        styled = df_dash.style.map(color_status, subset=["Status"])
+        try:
+            # pandas >= 2.1
+            styled = df_dash.style.map(color_status, subset=["Status"])
+        except AttributeError:
+            # pandas < 2.1 fallback
+            styled = df_dash.style.applymap(color_status, subset=["Status"])
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
         # Bar chart
         fig = px.bar(
             df_dash,
             x="Name",
-            y=["Eaten", "Remaining"],
+            y=["Max Cal", "Eaten"],
             barmode="group",
-            color_discrete_map={"Eaten": "#ff7043", "Remaining": "#42a5f5"},
+            color_discrete_map={"Max Cal": "#42a5f5", "Eaten": "#ff7043"},
             text_auto=True,
         )
         fig.update_layout(
-            title=f"Calories Overview ({view_mode})",
+            title=f"Max Cal vs Eaten ({view_mode})",
             legend_title="Type",
             plot_bgcolor="rgba(0,0,0,0)",
             paper_bgcolor="rgba(0,0,0,0)",
