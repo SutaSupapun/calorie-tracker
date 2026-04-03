@@ -114,6 +114,6 @@ if not df_dash.empty:
     st.plotly_chart(fig)
 
     # Export Excel
-    excel_download(df_dash, filename="calorie_dashboard.xlsx")
+    excel_download(df_dash, filename="calorie_dashboard.csv")
 else:
     st.info("No user data to display")
