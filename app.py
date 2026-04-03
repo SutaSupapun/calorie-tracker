@@ -3,6 +3,31 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import pytz
+import json
+import os
+
+# =======================
+# JSON Persistence
+# =======================
+DATA_FILE = "calorie_data.json"
+
+def load_data():
+    """โหลดข้อมูลจาก JSON file — ถ้าไม่มีไฟล์ให้คืน dict ว่าง"""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+    return {}
+
+def save_data(users: dict):
+    """บันทึกข้อมูลลง JSON file ทุกครั้งที่มีการเปลี่ยนแปลง"""
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except IOError as e:
+        st.error(f"❌ บันทึกข้อมูลไม่สำเร็จ: {e}")
 
 # =======================
 # Helper Functions
@@ -56,7 +81,7 @@ today_str = now.strftime("%Y-%m-%d")
 # Initialize Data
 # =======================
 if "users" not in st.session_state:
-    st.session_state["users"] = {}
+    st.session_state["users"] = load_data()  # ✅ โหลดจาก JSON แทน dict ว่าง
 
 if "form_counter" not in st.session_state:
     st.session_state["form_counter"] = 0
@@ -91,6 +116,7 @@ with st.sidebar.expander("➕ Add New User", expanded=True):
             st.sidebar.error("❌ User name already exists!")
         else:
             st.session_state["users"][new_user.strip()] = {"max_cal": new_max, "logs": {}}
+            save_data(st.session_state["users"])  # ✅ บันทึกลง JSON
             st.sidebar.success(f"✅ Added user: {new_user.strip()}")
             st.session_state["user_form_counter"] += 1  # ✅ clear User name field
             st.rerun()
@@ -113,6 +139,7 @@ if st.session_state["users"]:
         )
         if st.button("💾 Update Max Calories"):
             st.session_state["users"][selected]["max_cal"] = edit_max
+            save_data(st.session_state["users"])  # ✅ บันทึกลง JSON
             st.success(f"✅ Updated {selected}'s Max Calories to {edit_max}")
             st.rerun()
 
@@ -122,6 +149,7 @@ if st.session_state["users"]:
         if st.button("🗑️ Delete User"):
             if confirm_delete:
                 del st.session_state["users"][selected]
+                save_data(st.session_state["users"])  # ✅ บันทึกลง JSON
                 st.session_state["deleted_user"] = True  # ✅ flag สำหรับ reset selectbox หลัก
                 st.success(f"✅ Deleted user: {selected}")
                 st.rerun()
@@ -165,6 +193,7 @@ else:
         # ✅ FIX: บวกสะสม ไม่ทับค่าเดิม
         existing = user_logs.get(date_str, 0)
         user_logs[date_str] = existing + log_cal
+        save_data(st.session_state["users"])  # ✅ บันทึกลง JSON
 
         # เก็บ notes แยก
         notes_key = f"notes_{log_user}"
