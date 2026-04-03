@@ -61,6 +61,12 @@ if "users" not in st.session_state:
 if "form_counter" not in st.session_state:
     st.session_state["form_counter"] = 0
 
+if "user_form_counter" not in st.session_state:
+    st.session_state["user_form_counter"] = 0
+
+if "deleted_user" not in st.session_state:
+    st.session_state["deleted_user"] = False
+
 # =======================
 # Page Config
 # =======================
@@ -75,8 +81,9 @@ st.sidebar.header("👤 User Management")
 
 # --- Add New User ---
 with st.sidebar.expander("➕ Add New User", expanded=True):
-    new_user = st.text_input("User name", key="new_user_input")
-    new_max = st.number_input("Max Calories / day", min_value=0, value=2000, step=50, key="new_max_input")
+    ufc = st.session_state["user_form_counter"]
+    new_user = st.text_input("User name", key=f"new_user_input_{ufc}")
+    new_max = st.number_input("Max Calories / day", min_value=0, value=2000, step=50, key=f"new_max_input_{ufc}")
     if st.button("Add User"):
         if not new_user.strip():
             st.sidebar.error("❌ User name cannot be empty!")
@@ -85,6 +92,7 @@ with st.sidebar.expander("➕ Add New User", expanded=True):
         else:
             st.session_state["users"][new_user.strip()] = {"max_cal": new_max, "logs": {}}
             st.sidebar.success(f"✅ Added user: {new_user.strip()}")
+            st.session_state["user_form_counter"] += 1  # ✅ clear User name field
             st.rerun()
 
 # --- Edit / Delete Existing User ---
@@ -114,6 +122,7 @@ if st.session_state["users"]:
         if st.button("🗑️ Delete User"):
             if confirm_delete:
                 del st.session_state["users"][selected]
+                st.session_state["deleted_user"] = True  # ✅ flag สำหรับ reset selectbox หลัก
                 st.success(f"✅ Deleted user: {selected}")
                 st.rerun()
             else:
@@ -130,7 +139,13 @@ else:
     col1, col2, col3 = st.columns([2, 2, 2])
 
     with col1:
-        log_user = st.selectbox("Select user", list(st.session_state["users"].keys()), key="log_user")
+        # ✅ reset selectbox เมื่อ delete user โดยเปลี่ยน key
+        lfc = st.session_state["form_counter"]
+        if st.session_state["deleted_user"]:
+            st.session_state["form_counter"] += 1
+            st.session_state["deleted_user"] = False
+            lfc = st.session_state["form_counter"]
+        log_user = st.selectbox("Select user", list(st.session_state["users"].keys()), key=f"log_user_{lfc}")
 
     with col2:
         log_date = st.date_input("Date", value=now.date(), key="log_date")
