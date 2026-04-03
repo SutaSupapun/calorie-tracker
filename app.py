@@ -211,7 +211,7 @@ else:
 
     if not df_dash.empty:
         # ✅ FIX: ใช้ st.dataframe + Styler เพื่อแสดงสีได้
-        styled = df_dash.style.applymap(color_status, subset=["Status"])
+        styled = df_dash.style.map(color_status, subset=["Status"])
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
         # Bar chart
