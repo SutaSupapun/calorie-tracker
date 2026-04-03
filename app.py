@@ -1,4 +1,3 @@
-# app.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -46,8 +45,6 @@ if "users" not in st.session_state:
 # Sidebar: Add / Edit / Delete User
 # =======================
 st.sidebar.header("User Management")
-
-# Add user
 new_user = st.sidebar.text_input("New user name")
 new_max = st.sidebar.number_input("Max Calories", min_value=0, value=2000, step=50)
 if st.sidebar.button("Add User"):
@@ -59,17 +56,12 @@ if st.sidebar.button("Add User"):
         st.session_state["users"][new_user] = {"max_cal": new_max, "logs": {}}
         st.sidebar.success(f"Added user {new_user}")
 
-# Select user for edit/delete
 if st.session_state["users"]:
     selected = st.sidebar.selectbox("Select user", list(st.session_state["users"].keys()))
-    
-    # Edit Max Calories
     edit_max = st.sidebar.number_input("Edit Max Calories", min_value=0, value=st.session_state["users"][selected]["max_cal"], step=50)
     if st.sidebar.button("Update Max Calories"):
         st.session_state["users"][selected]["max_cal"] = edit_max
         st.sidebar.success(f"Updated {selected}'s Max Calories")
-    
-    # Delete user with confirm
     if st.sidebar.button("Delete User"):
         confirm_delete = st.sidebar.checkbox(f"Confirm delete user {selected}?")
         if confirm_delete:
@@ -109,8 +101,8 @@ for name, u in st.session_state["users"].items():
 
 df_dash = pd.DataFrame(dashboard_data)
 if not df_dash.empty:
-    # Table with Status coloring
-    st.dataframe(df_dash.style.applymap(color_status, subset=["Status"]))
+    # ใช้ st.table แทน st.dataframe + Styler
+    st.table(df_dash)
 
     # Plot remaining calories
     fig = px.bar(df_dash.head(5), x="Name", y="Remaining", color="Name",
